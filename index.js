@@ -6,7 +6,7 @@
  */
 
 var StorageBase = require('ghost-storage-base'),
-    LocalFileStore = require('ghost/core/server/adapters/storage/LocalFileStorage'),
+    LocalFileStore = require('../LocalFileStorage'),
     Promise = require('bluebird'),
     cloudinary = require('cloudinary').v2,
     path = require('path'),
