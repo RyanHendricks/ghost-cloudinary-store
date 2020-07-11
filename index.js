@@ -1,6 +1,12 @@
 'use strict';
 
+/**
+ * Modified https://github.com/mmornati/ghost-cloudinary-store to incorporate local fallback feature from
+ * https://raw.githubusercontent.com/DocSpring/ghost-storage-cloudinary/76c8ae49de7b996b5e89c0a4901637e51f24592b/index.js
+ */
+
 var StorageBase = require('ghost-storage-base'),
+    LocalFileStore = require('ghost/core/server/adapters/storage/LocalFileStorage'),
     Promise = require('bluebird'),
     cloudinary = require('cloudinary').v2,
     path = require('path'),
@@ -10,6 +16,10 @@ class CloudinaryAdapter extends StorageBase {
 
     constructor(options) {
         super(options);
+
+        if (options.serveLocalFiles) {
+            this.localFileStore = new LocalFileStore();
+        }
 
         var config = options || {};
         var auth = config.auth || config;
@@ -23,7 +33,11 @@ class CloudinaryAdapter extends StorageBase {
         cloudinary.config(auth);
     }
 
-    exists(filename) {
+    exists(filename, targetDir) {
+        if (this.localFileStore && this.localFileStore.exists(filename, targetDir)) {
+            return true;
+        }
+
         var pubId = this.toCloudinaryId(filename);
 
         return new Promise(function(resolve, reject) {
@@ -54,6 +68,7 @@ class CloudinaryAdapter extends StorageBase {
     }
 
     serve() {
+        if (this.localFileStore) return this.localFileStore.serve();
         return function (req, res, next) {
             next();
         };
@@ -73,6 +88,25 @@ class CloudinaryAdapter extends StorageBase {
     }
 
     read(options) {
+        if (!this.localFileStore) {
+            return this.readCloudinary(options);
+        }
+
+        return new Promise((resolve, reject) => {
+            this.localFileStore.read(options).then(
+                resolve,
+                function(error) {
+                    if (error.errorType === 'NotFoundError') {
+                        // Try Cloudinary after FileStorage can't find the file locally
+                        return this.readCloudinary(options).then(resolve, reject);
+                    }
+                    reject(error);
+                }
+            );
+        })
+    }
+
+    readCloudinary(options) {
         options = options || {};
         return new Promise(function (resolve, reject) {
             request.get(options.path, function (err, res) {
